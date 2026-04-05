@@ -1,0 +1,762 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Hadley's Diner</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #1a0a00;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      width: 100vw; height: 100vh;
+      overflow: hidden;
+    }
+  </style>
+</head>
+<body>
+<script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
+<script>
+// ─────────────────────────────────────────────────────────────────────────────
+//  PIXEL ART HELPERS
+// ─────────────────────────────────────────────────────────────────────────────
+
+function makeCharCanvas(opts) {
+  const S = 3;    // each game-pixel = 3×3 real px
+  const W = 16;
+  const hasHat = !!opts.hat;
+  // row budget: hat(5) + hairTop(2) + face(8) + neck(2) + body(9) + pants(7) + shoes(3) = 36 / 31
+  const H = hasHat ? 36 : 31;
+
+  const cvs = document.createElement('canvas');
+  cvs.width = W * S; cvs.height = H * S;
+  const c = cvs.getContext('2d');
+  c.imageSmoothingEnabled = false;
+
+  function px(x, y, w, h, color) {
+    if (y < 0 || y >= H) return;
+    c.fillStyle = color;
+    c.fillRect(x * S, y * S, w * S, h * S);
+  }
+
+  const { hair, skin, shirt, pants, hat } = opts;
+  let y = 0;
+
+  // Chef hat
+  if (hat) {
+    px(5, 0, 6, 3, hat);   // crown
+    px(2, 3, 12, 2, hat);  // brim
+    y = 5;
+  }
+
+  // Hair top
+  px(3, y, 10, 2, hair);
+
+  // Face
+  const fY = y + 1;
+  px(3, fY,     10, 8, skin);       // face fill
+  px(3, fY,      1, 7, hair);       // left hair side
+  px(12, fY,     1, 7, hair);       // right hair side
+  px(5,  fY + 2, 2, 2, '#334455'); // left eye
+  px(9,  fY + 2, 2, 2, '#334455'); // right eye
+  px(4,  fY + 4, 1, 1, '#FFAAAA'); // left blush
+  px(10, fY + 4, 1, 1, '#FFAAAA'); // right blush
+  px(5,  fY + 5, 1, 1, '#CC6666'); // smile corners
+  px(10, fY + 5, 1, 1, '#CC6666');
+  px(6,  fY + 6, 4, 1, '#CC6666'); // smile curve
+
+  // Neck
+  const nY = fY + 8;
+  px(7, nY, 2, 2, skin);
+
+  // Body / shirt
+  const bY = nY + 2;
+  px(2, bY,     12, 9, shirt);
+  px(7, bY,      2, 7, shiftColor(shirt, 15));  // center button strip
+  px(0, bY + 1,  3, 6, shirt);                  // left arm
+  px(13, bY + 1, 3, 6, shirt);                  // right arm
+  px(0, bY + 6,  3, 2, skin);                   // left hand
+  px(13, bY + 6, 3, 2, skin);                   // right hand
+
+  // Pants
+  const pY = bY + 9;
+  px(2, pY, 12, 7, pants);
+  // leg-gap shadow
+  c.fillStyle = 'rgba(0,0,0,0.3)';
+  c.fillRect(7 * S, (pY + 2) * S, 2 * S, 5 * S);
+
+  // Shoes
+  px(1,  pY + 7, 7, 3, '#222222');
+  px(8,  pY + 7, 7, 3, '#222222');
+
+  return cvs;
+}
+
+function shiftColor(hex, amt) {
+  // lighten a hex color string by amt
+  const n = parseInt(hex.replace('#',''), 16);
+  const r = Math.min(255, ((n >> 16) & 0xff) + amt);
+  const g = Math.min(255, ((n >> 8)  & 0xff) + amt);
+  const b = Math.min(255, ( n        & 0xff) + amt);
+  return '#' + [r,g,b].map(v => v.toString(16).padStart(2,'0')).join('');
+}
+
+function makeFoodCanvas(type) {
+  const S = 4;
+  const cvs = document.createElement('canvas');
+  cvs.width = 10 * S; cvs.height = 10 * S;
+  const c = cvs.getContext('2d');
+  c.imageSmoothingEnabled = false;
+
+  function px(x, y, w, h, col) {
+    c.fillStyle = col; c.fillRect(x*S, y*S, w*S, h*S);
+  }
+
+  if (type === 'Burger') {
+    px(1, 0, 8, 2, '#C4852A'); // top bun
+    px(1, 2, 8, 1, '#228B22'); // lettuce
+    px(1, 3, 8, 2, '#6B0000'); // patty
+    px(0, 5, 10, 2, '#FFD700'); // cheese
+    px(1, 7, 8, 3, '#D2691E'); // bottom bun
+  } else if (type === 'Fries') {
+    px(0, 6, 10, 4, '#CC2200');
+    for (let i = 1; i < 9; i += 2) px(i, 0, 1, 7, '#FFD700');
+    px(1, 7, 1, 1, '#FFAA00');
+  } else if (type === 'Pizza') {
+    c.fillStyle = '#DAA520';
+    c.beginPath(); c.moveTo(5*S,0); c.lineTo(0,10*S); c.lineTo(10*S,10*S); c.closePath(); c.fill();
+    c.fillStyle = '#FF6347';
+    c.beginPath(); c.moveTo(5*S,1*S); c.lineTo(1*S,9*S); c.lineTo(9*S,9*S); c.closePath(); c.fill();
+    px(3, 5, 2, 2, '#CC0000');
+    px(6, 7, 2, 2, '#CC0000');
+  } else { // Salad
+    px(0, 6, 10, 4, '#8B4513');
+    px(1, 3, 8, 4, '#32CD32');
+    px(2, 2, 3, 2, '#228B22');
+    px(6, 2, 2, 2, '#228B22');
+    px(3, 5, 2, 1, '#FF6347');
+    px(6, 4, 2, 1, '#FF6347');
+  }
+  return cvs;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  CONSTANTS
+// ─────────────────────────────────────────────────────────────────────────────
+
+const GW = 800, GH = 450, WW = 1600;
+const FLOOR_Y = Math.floor(GH * 0.63);
+const MENU = ['Burger', 'Fries', 'Pizza', 'Salad'];
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  GAME SCENE
+// ─────────────────────────────────────────────────────────────────────────────
+
+class GameScene extends Phaser.Scene {
+  constructor() { super('Game'); }
+
+  // ── PRELOAD ────────────────────────────────────────────────────────────────
+
+  preload() {
+    // Characters
+    const chars = [
+      ['hadley',  { hair:'#6B3A2A', skin:'#FFCBA4', shirt:'#F0F0EE', pants:'#1a2a6c', hat:'#FFFFFF' }],
+      ['server',  { hair:'#D4AA44', skin:'#FFE4B5', shirt:'#CC3333', pants:'#222222', hat: null }],
+      ['cust_a',  { hair:'#222222', skin:'#FFCBA4', shirt:'#4A90D9', pants:'#5C4033', hat: null }],
+      ['cust_b',  { hair:'#AA7744', skin:'#D4956A', shirt:'#2E8B57', pants:'#222233', hat: null }],
+      ['cust_c',  { hair:'#BBBBBB', skin:'#FFE0CC', shirt:'#9B59B6', pants:'#334466', hat: null }],
+    ];
+    chars.forEach(([k, o]) => this.textures.addCanvas(k, makeCharCanvas(o)));
+
+    // Food
+    MENU.forEach(f => this.textures.addCanvas(f, makeFoodCanvas(f)));
+  }
+
+  // ── CREATE ─────────────────────────────────────────────────────────────────
+
+  create() {
+    this.score   = 0;
+    this.orders  = [];
+    this.custList = [];
+    this.nextId  = 1;
+
+    this._buildWorld();
+    this._buildCharacters();
+    this._buildUI();
+    this._setupInput();
+
+    // Spawn customers
+    this.time.delayedCall(2000,  () => this._spawnCustomer());
+    this.time.addEvent({ delay: 7000, callback: () => this._spawnCustomer(), loop: true });
+  }
+
+  // ── WORLD ──────────────────────────────────────────────────────────────────
+
+  _buildWorld() {
+    const g = this.add.graphics();
+
+    // Kitchen wall & floor
+    g.fillStyle(0xC8A464); g.fillRect(0, 0, 750, FLOOR_Y);
+    g.fillStyle(0x7A5C20); g.fillRect(0, FLOOR_Y, 750, GH - FLOOR_Y);
+    // Checkerboard kitchen floor
+    for (let x = 0; x < 750; x += 50)
+      for (let y = FLOOR_Y; y < GH; y += 50)
+        if (((x/50 | 0) + (y/50 | 0)) % 2 === 0) {
+          g.fillStyle(0x6A4C10, 0.4); g.fillRect(x, y, 50, 50);
+        }
+    // Ceiling strip
+    g.fillStyle(0x8B6030); g.fillRect(0, FLOOR_Y - 6, 750, 6);
+
+    // Dividing wall & door
+    g.fillStyle(0x4A2A18); g.fillRect(750, 0, 50, GH);
+    g.fillStyle(0x2D0E04); g.fillRect(762, FLOOR_Y - GH * 0.25, 26, GH * 0.25);
+    g.lineStyle(3, 0xAA7744, 1); g.strokeRect(762, FLOOR_Y - GH * 0.25, 26, GH * 0.25);
+    this.add.text(775, FLOOR_Y - GH * 0.26, '🚪', { fontSize:'13px' }).setOrigin(0.5, 1);
+
+    // Dining wall & floor
+    g.fillStyle(0xF0E0C0); g.fillRect(800, 0, WW - 800, FLOOR_Y);
+    g.fillStyle(0xAA6633); g.fillRect(800, FLOOR_Y, WW - 800, GH - FLOOR_Y);
+    // Checkerboard dining floor
+    for (let x = 800; x < WW; x += 50)
+      for (let y = FLOOR_Y; y < GH; y += 50)
+        if (((x/50 | 0) + (y/50 | 0)) % 2 === 0) {
+          g.fillStyle(0x994422, 0.35); g.fillRect(x, y, 50, 50);
+        }
+    // Wainscoting
+    g.fillStyle(0xDEB887, 0.45); g.fillRect(800, FLOOR_Y - 18, WW - 800, 18);
+
+    // ── STATIONS ────────────────────────────────────────────────────────────
+    this.stations = [];
+    [
+      { x: 120, label: 'GRILL', color: 0x555555 },
+      { x: 320, label: 'FRYER', color: 0xBB7700 },
+      { x: 520, label: 'PREP',  color: 0x336633 },
+    ].forEach(d => {
+      const sg = this.add.graphics();
+      sg.fillStyle(d.color);            sg.fillRect(-44, -28, 88, 56);
+      sg.fillStyle(d.color - 0x1A1A1A); sg.fillRect(-38, -22, 76, 22);
+      sg.fillStyle(d.color + 0x333333, 0.3); sg.fillRect(-38, -22, 76, 8);
+      sg.x = d.x; sg.y = FLOOR_Y - 30;
+
+      this.add.text(d.x, FLOOR_Y - 66, d.label, {
+        fontSize: '10px', fontFamily: 'monospace', color: '#FFFFFF',
+        backgroundColor: '#00000099', padding: { x: 3, y: 2 }
+      }).setOrigin(0.5);
+
+      // Progress bar track
+      const barBg = this.add.graphics();
+      barBg.fillStyle(0x222222); barBg.fillRect(-40, 33, 80, 9);
+      barBg.x = d.x; barBg.y = FLOOR_Y - 30;
+
+      const barFill = this.add.graphics();
+      barFill.x = d.x; barFill.y = FLOOR_Y - 30;
+
+      this.stations.push({
+        ...d,
+        graphics: sg, barFill,
+        cooking: false, progress: 0,
+        readyOrder: null, foodSprite: null
+      });
+    });
+
+    // ── TABLES ──────────────────────────────────────────────────────────────
+    this.tables = [];
+    [920, 1110, 1300, 1490].forEach((tx, i) => {
+      const tg = this.add.graphics();
+      tg.fillStyle(0x6B3410); tg.fillRect(-42, -14, 84, 28);
+      tg.fillStyle(0x8B4513); tg.fillRect(-36, -8, 72, 14);
+      tg.fillStyle(0x5A2E0A); tg.fillRect(-30, 14, 10, 16); tg.fillRect(20, 14, 10, 16);
+      tg.x = tx; tg.y = FLOOR_Y - 20;
+
+      // Chairs
+      [-30, 30].forEach(ox => {
+        const cg = this.add.graphics();
+        cg.fillStyle(0x8B4513); cg.fillRect(-12, -10, 24, 20);
+        cg.fillStyle(0x6B3410); cg.fillRect(-12, -18, 24, 9);
+        cg.x = tx + ox; cg.y = FLOOR_Y + 20;
+      });
+
+      this.add.text(tx, FLOOR_Y - 20, `${i+1}`, {
+        fontSize: '13px', fontFamily: 'monospace',
+        color: '#FFE4B5', fontStyle: 'bold'
+      }).setOrigin(0.5);
+
+      this.tables.push({ x: tx, y: FLOOR_Y - 4, index: i, occupied: false, customer: null, patience: 1.0 });
+    });
+
+    // ── TITLE (camera-fixed) ────────────────────────────────────────────────
+    this.add.text(GW / 2, 22, "✨  HADLEY'S DINER  ✨", {
+      fontSize: '22px', fontFamily: 'monospace', fontStyle: 'bold',
+      color: '#FFD700', stroke: '#6B3410', strokeThickness: 5,
+      shadow: { x: 2, y: 2, color: '#000', blur: 4, fill: true }
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(50);
+  }
+
+  // ── CHARACTERS ────────────────────────────────────────────────────────────
+
+  _buildCharacters() {
+    this.hadley = this._makeChar(200, 'hadley', 'Hadley');
+    this.serverChar = this._makeChar(940, 'server', 'Alex');
+    this.activeChar = this.hadley;
+
+    // Selection ring under active character
+    this.selRing = this.add.graphics().setDepth(9);
+    this._refreshRing();
+
+    this.cameras.main.setBounds(0, 0, WW, GH);
+    this.cameras.main.startFollow(this.hadley, true, 0.08, 0.08);
+  }
+
+  _makeChar(x, texKey, name) {
+    const spr = this.add.image(x, FLOOR_Y, texKey)
+      .setOrigin(0.5, 1).setDepth(10);
+    spr.charName    = name;
+    spr.isMoving    = false;
+    spr.pendingAction = null;
+    spr.carrying    = null;
+    spr.foodSprite  = null;
+    return spr;
+  }
+
+  // ── UI ────────────────────────────────────────────────────────────────────
+
+  _buildUI() {
+    // Score panel
+    const sp = this.add.graphics().setScrollFactor(0).setDepth(60);
+    sp.fillStyle(0x000000, 0.6); sp.fillRoundedRect(6, 6, 140, 36, 6);
+    this.scoreTxt = this.add.text(75, 24, '★  0', {
+      fontSize: '18px', fontFamily: 'monospace', fontStyle: 'bold', color: '#FFD700'
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(61);
+
+    // Order panel (rebuilt on each change)
+    this.orderPanel = this.add.graphics().setScrollFactor(0).setDepth(60);
+    this.orderTxts  = [];
+
+    // Character label (fades in/out on switch)
+    this.charLabel = this.add.text(GW / 2, 60, '', {
+      fontSize: '13px', fontFamily: 'monospace',
+      color: '#FFFFFF', backgroundColor: '#00000099',
+      padding: { x: 6, y: 3 }
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(61).setAlpha(0);
+
+    // ── CHARACTER SWITCH BUTTONS (always visible, bottom-left) ──────────────
+    this._buildSwitchButtons();
+
+    // Hint bar
+    this.add.text(GW / 2, GH - 7, 'Tap to move  •  Use buttons below-left to switch character', {
+      fontSize: '10px', fontFamily: 'monospace',
+      color: '#FFFFFF', backgroundColor: '#00000077',
+      padding: { x: 5, y: 3 }
+    }).setOrigin(0.5, 1).setScrollFactor(0).setDepth(60);
+  }
+
+  // ── INPUT ─────────────────────────────────────────────────────────────────
+
+  _setupInput() {
+    this.input.on('pointerdown', ptr => {
+      const wx = ptr.x + this.cameras.main.scrollX;
+      const wy = ptr.y + this.cameras.main.scrollY;
+
+      // 1) Tap character to switch
+      for (const ch of [this.hadley, this.serverChar]) {
+        const midY = ch.y - ch.displayHeight * 0.5;
+        if (Phaser.Math.Distance.Between(wx, wy, ch.x, midY) < 36) {
+          this._switchChar(ch); return;
+        }
+      }
+
+      // 2) Tap a station (anyone can cook, but only makes sense for Hadley)
+      for (const st of this.stations) {
+        if (Phaser.Math.Distance.Between(wx, wy, st.x, st.y) < 55) {
+          this._moveChar(this.activeChar, st.x, { type: 'station', station: st });
+          return;
+        }
+      }
+
+      // 3) Tap a table (deliver if carrying)
+      if (this.activeChar.carrying) {
+        for (const t of this.tables) {
+          if (Phaser.Math.Distance.Between(wx, wy, t.x, t.y) < 70) {
+            this._moveChar(this.activeChar, t.x, { type: 'deliver', table: t });
+            return;
+          }
+        }
+      }
+
+      // 4) General move
+      if (Math.abs(wy - FLOOR_Y) < 90) {
+        this._moveChar(this.activeChar, wx, null);
+      }
+    });
+  }
+
+  // ── SWITCH BUTTONS ────────────────────────────────────────────────────────
+
+  _buildSwitchButtons() {
+    // Two stacked buttons, bottom-left, always fixed to camera
+    const btnDefs = [
+      { label: '👩‍🍳 Hadley', char: () => this.hadley,     x: 6,  y: GH - 70 },
+      { label: '🧑‍🍽️ Alex',   char: () => this.serverChar, x: 6,  y: GH - 36 },
+    ];
+
+    this.switchBtnBgs = [];
+
+    btnDefs.forEach(def => {
+      const bg = this.add.graphics().setScrollFactor(0).setDepth(70);
+      bg.fillStyle(0x000000, 0.65);
+      bg.fillRoundedRect(0, 0, 110, 28, 6);
+      bg.x = def.x; bg.y = def.y;
+      this.switchBtnBgs.push({ bg, def });
+
+      const label = this.add.text(def.x + 55, def.y + 14, def.label, {
+        fontSize: '12px', fontFamily: 'monospace', fontStyle: 'bold', color: '#FFFFFF'
+      }).setOrigin(0.5).setScrollFactor(0).setDepth(71);
+
+      // Make interactive
+      const zone = this.add.zone(def.x, def.y, 110, 28)
+        .setOrigin(0, 0).setScrollFactor(0).setDepth(72).setInteractive();
+      zone.on('pointerdown', () => this._switchChar(def.char()));
+    });
+
+    // Highlight the active button each frame
+    this._lastActiveChar = null;
+  }
+
+  _refreshSwitchButtons() {
+    if (!this.switchBtnBgs) return;
+    this.switchBtnBgs.forEach(({ bg, def }) => {
+      const isActive = def.char() === this.activeChar;
+      bg.clear();
+      bg.fillStyle(isActive ? 0x8B4513 : 0x000000, isActive ? 0.9 : 0.65);
+      bg.fillRoundedRect(0, 0, 110, 28, 6);
+      if (isActive) {
+        bg.lineStyle(2, 0xFFD700, 1);
+        bg.strokeRoundedRect(0, 0, 110, 28, 6);
+      }
+    });
+  }
+
+  // ── MOVEMENT ──────────────────────────────────────────────────────────────
+
+  _moveChar(char, targetX, action) {
+    char.pendingAction = action;
+    char.isMoving = true;
+    char.setFlipX(targetX < char.x);
+
+    this.tweens.killTweensOf(char);
+    const ms = Math.max(200, Math.abs(targetX - char.x) * 4);
+    this.tweens.add({
+      targets: char, x: targetX, duration: ms, ease: 'Linear',
+      onComplete: () => { char.isMoving = false; this._onArrival(char); }
+    });
+  }
+
+  _onArrival(char) {
+    const act = char.pendingAction;
+    if (!act) return;
+    char.pendingAction = null;
+
+    if (act.type === 'station') {
+      const waiting = this.orders.find(o => o.status === 'waiting');
+      if (waiting) this._startCooking(waiting, act.station);
+      else this._floatText(act.station.x, act.station.y - 50, 'No orders!', '#FF8800');
+    }
+    if (act.type === 'deliver' && char.carrying) {
+      this._deliverFood(char, act.table);
+    }
+  }
+
+  // ── COOKING ───────────────────────────────────────────────────────────────
+
+  _startCooking(order, station) {
+    if (station.cooking) { this._floatText(station.x, station.y - 50, 'Busy!', '#FF4444'); return; }
+
+    order.status = 'cooking';
+    station.cooking  = true;
+    station.progress = 0;
+    station.activeOrder = order;
+    this._refreshOrders();
+
+    this.tweens.add({
+      targets: station, progress: 1, duration: 4000, ease: 'Linear',
+      onUpdate: () => {
+        const p   = station.progress;
+        const col = p < 0.5 ? 0xFF8C00 : p < 0.85 ? 0xFFD700 : 0x44DD44;
+        station.barFill.clear();
+        station.barFill.fillStyle(col);
+        station.barFill.fillRect(-40, 33, 80 * p, 9);
+      },
+      onComplete: () => {
+        station.cooking = false;
+        station.barFill.clear();
+        order.status = 'ready';
+
+        // Food sprite on counter
+        if (station.foodSprite) station.foodSprite.destroy();
+        station.foodSprite  = this.add.image(station.x, station.y - 42, order.item)
+          .setDepth(8).setScale(0.9);
+        station.readyOrder  = order;
+        order.stationRef    = station;
+
+        this._refreshOrders();
+        this.cameras.main.flash(350, 255, 220, 0, false);
+        this._floatText(station.x, station.y - 70, `${order.item} READY! ✅`, '#FFD700');
+      }
+    });
+  }
+
+  // ── DELIVERY ──────────────────────────────────────────────────────────────
+
+  _deliverFood(char, table) {
+    const order = this.orders.find(o => o.table === table && o.status === 'ready');
+    if (!order) { this._floatText(table.x, table.y - 40, 'No order!', '#FF8800'); return; }
+
+    order.status = 'delivered';
+    if (char.foodSprite) { char.foodSprite.destroy(); char.foodSprite = null; }
+    char.carrying = null;
+
+    const tip = Math.floor(table.patience * 50);
+    this.score += 50 + tip;
+    this.scoreTxt.setText(`★  ${this.score}`);
+
+    this._floatText(table.x, table.y - 60, `+${50 + tip} ★`, '#44FF44');
+    this._customerLeave(table.customer, true);
+    this._refreshOrders();
+  }
+
+  // ── CUSTOMERS ─────────────────────────────────────────────────────────────
+
+  _spawnCustomer() {
+    const freeTable = this.tables.find(t => !t.occupied);
+    if (!freeTable) return;
+
+    const type = Phaser.Utils.Array.GetRandom(['cust_a', 'cust_b', 'cust_c']);
+    const item = Phaser.Utils.Array.GetRandom(MENU);
+
+    const cust = this.add.image(WW + 50, FLOOR_Y, type)
+      .setOrigin(0.5, 1).setDepth(10);
+    cust.patience = 1.0;
+    cust.tableRef = freeTable;
+    cust.orderItem = item;
+    cust.isSeated  = false;
+    cust.bubble    = null;
+    cust.bubbleTxt = null;
+    cust.pBar      = null;
+
+    freeTable.occupied = true;
+    freeTable.customer = cust;
+    freeTable.patience = 1.0;
+    this.custList.push(cust);
+
+    // Walk in from right
+    this.tweens.add({
+      targets: cust, x: freeTable.x, duration: 2200, ease: 'Linear',
+      onComplete: () => {
+        cust.isSeated = true;
+        cust.setFlipX(true);
+        this._showBubble(cust, item);
+        this.orders.push({
+          id: this.nextId++, item, table: freeTable,
+          customer: cust, status: 'waiting', stationRef: null
+        });
+        this._refreshOrders();
+      }
+    });
+  }
+
+  _showBubble(cust, text) {
+    if (cust.bubble)    { cust.bubble.destroy(); }
+    if (cust.bubbleTxt) { cust.bubbleTxt.destroy(); }
+    if (cust.pBar)      { cust.pBar.destroy(); }
+
+    const bx = cust.x - 40;
+    const by = cust.y - cust.displayHeight - 50;
+
+    const bg = this.add.graphics().setDepth(20);
+    bg.fillStyle(0xFFFFFF, 0.97);
+    bg.fillRoundedRect(bx, by, 80, 32, 7);
+    // Tail pointing down
+    bg.fillTriangle(cust.x - 7, by + 32, cust.x + 7, by + 32, cust.x, by + 44);
+    cust.bubble = bg;
+
+    cust.bubbleTxt = this.add.text(cust.x, by + 16, text, {
+      fontSize: '11px', fontFamily: 'monospace', fontStyle: 'bold', color: '#222222'
+    }).setOrigin(0.5).setDepth(21);
+
+    cust.pBar = this.add.graphics().setDepth(20);
+    this._drawPBar(cust);
+  }
+
+  _drawPBar(cust) {
+    if (!cust.pBar) return;
+    const pb  = cust.pBar;
+    const bx  = cust.x - 28;
+    const by  = cust.y - cust.displayHeight - 12;
+    const col = cust.patience > 0.6 ? 0x44CC44 : cust.patience > 0.3 ? 0xFFAA00 : 0xFF3333;
+    pb.clear();
+    pb.fillStyle(0x222222); pb.fillRect(bx, by, 56, 8);
+    pb.fillStyle(col);      pb.fillRect(bx, by, 56 * cust.patience, 8);
+  }
+
+  _customerLeave(cust, happy) {
+    if (!cust || !cust.isSeated) return;
+    cust.isSeated = false;
+
+    if (cust.tableRef) { cust.tableRef.occupied = false; cust.tableRef.customer = null; }
+    if (cust.bubble)    { cust.bubble.destroy();    cust.bubble    = null; }
+    if (cust.bubbleTxt) { cust.bubbleTxt.destroy(); cust.bubbleTxt = null; }
+    if (cust.pBar)      { cust.pBar.destroy();      cust.pBar      = null; }
+
+    if (!happy) {
+      this.score = Math.max(0, this.score - 10);
+      this.scoreTxt.setText(`★  ${this.score}`);
+      this._floatText(cust.x, cust.y - 60, '−10  😠', '#FF4444');
+    }
+
+    // Walk out to the right
+    cust.setFlipX(false);
+    this.tweens.add({
+      targets: cust, x: WW + 60, duration: 1800, ease: 'Linear',
+      onComplete: () => {
+        this.custList = this.custList.filter(c => c !== cust);
+        cust.destroy();
+      }
+    });
+  }
+
+  // ── ORDER LIST ────────────────────────────────────────────────────────────
+
+  _refreshOrders() {
+    this.orderTxts.forEach(t => t.destroy());
+    this.orderTxts = [];
+    this.orderPanel.clear();
+
+    const live = this.orders.filter(o => o.status !== 'delivered');
+    if (!live.length) return;
+
+    const panH = live.length * 26 + 10;
+    this.orderPanel.fillStyle(0x000000, 0.55);
+    this.orderPanel.fillRoundedRect(GW - 168, 6, 162, panH, 6);
+
+    live.forEach((o, i) => {
+      const icon = o.status === 'waiting' ? '⏳' : o.status === 'cooking' ? '🍳' : '✅';
+      const col  = o.status === 'ready'   ? '#FFD700' : '#EEEEEE';
+      const t = this.add.text(GW - 10, 20 + i * 26,
+        `${icon} T${o.table.index + 1}: ${o.item}`,
+        { fontSize: '11px', fontFamily: 'monospace', color: col }
+      ).setOrigin(1, 0).setScrollFactor(0).setDepth(61);
+      this.orderTxts.push(t);
+    });
+  }
+
+  // ── HELPERS ───────────────────────────────────────────────────────────────
+
+  _switchChar(char) {
+    this.activeChar = char;
+    this.cameras.main.startFollow(char, true, 0.08, 0.08);
+    this._refreshRing();
+
+    this.charLabel.setText(`Now playing as  ${char.charName}`).setAlpha(1);
+    this.tweens.killTweensOf(this.charLabel);
+    this.tweens.add({ targets: this.charLabel, alpha: 0, delay: 900, duration: 600 });
+  }
+
+  _refreshRing() {
+    const ch = this.activeChar;
+    this.selRing.clear();
+    this.selRing.lineStyle(2, 0xFFD700, 0.85);
+    this.selRing.strokeEllipse(0, 0, ch.displayWidth + 10, 12);
+    this.selRing.x = ch.x; this.selRing.y = ch.y;
+  }
+
+  _floatText(x, y, msg, color) {
+    const t = this.add.text(x, y, msg, {
+      fontSize: '15px', fontFamily: 'monospace', fontStyle: 'bold',
+      color, stroke: '#000000', strokeThickness: 3
+    }).setOrigin(0.5).setDepth(100);
+    this.tweens.add({ targets: t, y: y - 55, alpha: 0, duration: 1200, onComplete: () => t.destroy() });
+  }
+
+  // ── UPDATE ────────────────────────────────────────────────────────────────
+
+  update(time, delta) {
+    const dt = delta / 1000;
+
+    // Refresh switch button highlight when active char changes
+    if (this._lastActiveChar !== this.activeChar) {
+      this._lastActiveChar = this.activeChar;
+      this._refreshSwitchButtons();
+    }
+
+    // Character walk-bob
+    [this.hadley, this.serverChar].forEach(ch => {
+      ch.y = ch.isMoving ? FLOOR_Y + Math.sin(time * 0.013) * 2 : FLOOR_Y;
+    });
+
+    // Selection ring tracks active char
+    this.selRing.x = this.activeChar.x;
+    this.selRing.y = this.activeChar.y;
+
+    // Patience drain (all seated customers)
+    this.custList.forEach(cust => {
+      if (!cust.isSeated) return;
+      const order = this.orders.find(o => o.customer === cust && o.status !== 'delivered');
+      if (!order) return;
+
+      cust.patience -= dt * 0.038; // ~26 sec patience window
+      if (cust.patience <= 0) {
+        order.status = 'delivered'; // remove from queue
+        this._customerLeave(cust, false);
+        this._refreshOrders();
+        return;
+      }
+      cust.tableRef.patience = cust.patience;
+      this._drawPBar(cust);
+    });
+
+    // Auto-pickup: any char within 60px of a food-ready station grabs it
+    for (const ch of [this.hadley, this.serverChar]) {
+      if (ch.carrying) continue;
+      for (const st of this.stations) {
+        if (!st.readyOrder || !st.foodSprite) continue;
+        if (Phaser.Math.Distance.Between(ch.x, ch.y, st.x, st.y) < 65) {
+          ch.carrying = st.readyOrder;
+          st.foodSprite.destroy(); st.foodSprite = null;
+          st.readyOrder = null;
+
+          if (ch.foodSprite) ch.foodSprite.destroy();
+          ch.foodSprite = this.add.image(ch.x, ch.y - ch.displayHeight - 8, ch.carrying.item)
+            .setDepth(11).setScale(0.85);
+
+          this._floatText(ch.x, ch.y - 80, 'Picked up!', '#FFFFFF');
+          break;
+        }
+      }
+    }
+
+    // Food sprite follows its carrier
+    for (const ch of [this.hadley, this.serverChar]) {
+      if (ch.foodSprite) {
+        ch.foodSprite.x = ch.x;
+        ch.foodSprite.y = ch.y - ch.displayHeight - 8;
+      }
+    }
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  BOOT
+// ─────────────────────────────────────────────────────────────────────────────
+
+new Phaser.Game({
+  type: Phaser.AUTO,
+  width: GW, height: GH,
+  backgroundColor: '#1a0a00',
+  scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
+  scene: [GameScene]
+});
+</script>
+</body>
+</html>

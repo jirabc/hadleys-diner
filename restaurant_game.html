@@ -1,0 +1,882 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Hadley's Kitchen Rush!</title>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka+One&family=Nunito:wght@700;800&display=swap" rel="stylesheet">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; touch-action: manipulation; }
+
+body {
+  font-family: 'Fredoka One', cursive;
+  background: #fdf4e3;
+  height: 100vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  user-select: none;
+}
+
+/* ── HEADER ── */
+#header {
+  background: linear-gradient(135deg, #8b2635, #c0392b);
+  color: white;
+  padding: 8px 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  flex-shrink: 0;
+}
+.stat { font-size: 18px; }
+.stat span { font-size: 24px; color: #ffd700; }
+#timer { font-size: 20px; }
+#timer.urgent { color: #ff9999; animation: blink 0.5s infinite; }
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.5} }
+
+/* ── ORDERS PANEL ── */
+#orders-panel {
+  background: #fff9e6;
+  border-bottom: 3px solid #f0c040;
+  padding: 8px 10px;
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  flex-shrink: 0;
+  min-height: 138px;
+  align-items: center;
+}
+#orders-panel::-webkit-scrollbar { height: 4px; }
+#orders-panel::-webkit-scrollbar-thumb { background: #f0c040; border-radius: 2px; }
+#orders-empty { color: #bbb; font-size: 15px; width: 100%; text-align: center; font-family: 'Nunito', sans-serif; }
+
+/* ── ORDER CARDS ── */
+.order-card {
+  background: white;
+  border: 3px solid #ddd;
+  border-radius: 12px;
+  padding: 7px 10px;
+  min-width: 125px;
+  max-width: 135px;
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: transform 0.1s, border-color 0.2s, box-shadow 0.2s;
+}
+.order-card:active { transform: scale(0.96); }
+.order-card.selected { border-color: #f0c040; box-shadow: 0 0 0 3px rgba(240,192,64,0.45); }
+.order-card.ready { border-color: #2ecc71; animation: readyPulse 0.9s infinite; }
+.order-card.failed { border-color: #e74c3c; background: #ffeaea; pointer-events: none; opacity: 0.7; }
+.order-patron { font-size: 12px; color: #777; font-family: 'Nunito', sans-serif; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.order-food { font-size: 26px; line-height: 1.2; }
+.order-food-name { font-size: 12px; color: #333; font-family: 'Nunito', sans-serif; font-weight: 800; }
+.order-hint { font-size: 11px; color: #999; font-family: 'Nunito', sans-serif; }
+.order-table-lbl { font-size: 11px; color: #555; font-family: 'Nunito', sans-serif; font-weight: 700; }
+.patience-bar-bg { height: 6px; background: #eee; border-radius: 3px; margin-top: 5px; }
+.patience-bar { height: 6px; border-radius: 3px; background: #2ecc71; }
+.cook-bg { height: 5px; background: #eee; border-radius: 3px; margin-top: 3px; display: none; }
+.cook-bar { height: 5px; border-radius: 3px; background: #3498db; }
+.order-status { font-size: 11px; font-weight: bold; margin-top: 2px; text-align: center; font-family: 'Nunito', sans-serif; }
+
+/* ── MAIN AREA ── */
+#main-area {
+  flex: 1;
+  display: flex;
+  gap: 8px;
+  padding: 8px;
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* ── KITCHEN ── */
+#kitchen {
+  flex: 1;
+  background: #f0ebe0;
+  border-radius: 14px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+#kitchen-title, #dining-title {
+  text-align: center;
+  font-size: 15px;
+  margin-bottom: 7px;
+}
+#kitchen-title { color: #8b5a2b; }
+#dining-title { color: #6b3a0f; }
+#stations-grid {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 7px;
+  min-height: 0;
+}
+
+/* ── STATION CARDS ── */
+.station-card {
+  border-radius: 12px;
+  padding: 8px 6px;
+  cursor: pointer;
+  transition: transform 0.1s, box-shadow 0.2s;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  position: relative;
+  overflow: hidden;
+}
+.station-card:active:not(.fire):not(.disabled) { transform: scale(0.95); }
+.station-card.pulsing { animation: stationGlow 0.7s infinite; }
+.station-card.fire { animation: firePulse 0.35s infinite; cursor: pointer; }
+.station-card.disabled { opacity: 0.45; cursor: not-allowed; }
+.station-emoji { font-size: 26px; line-height: 1; }
+.station-name { font-size: 14px; color: white; text-shadow: 1px 1px 2px rgba(0,0,0,0.35); }
+.station-foods { font-size: 10px; color: rgba(255,255,255,0.85); font-family: 'Nunito', sans-serif; }
+.station-cooking-food { font-size: 20px; display: none; }
+.station-prog-bg { width: 88%; height: 7px; background: rgba(255,255,255,0.3); border-radius: 4px; display: none; }
+.station-prog { height: 7px; border-radius: 4px; background: white; }
+.station-status { font-size: 10px; color: rgba(255,255,255,0.9); font-family: 'Nunito', sans-serif; text-align: center; }
+.fire-badge { position: absolute; top: 4px; right: 6px; font-size: 18px; display: none; animation: fireWiggle 0.2s infinite; }
+
+/* ── DINING ROOM ── */
+#dining-room {
+  flex: 1;
+  background: #ead9bc;
+  border-radius: 14px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+#tables-grid {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 7px;
+  min-height: 0;
+}
+
+/* ── TABLE CARDS ── */
+.table-card {
+  background: #c9a96e;
+  border: 3px solid #a07840;
+  border-radius: 12px;
+  padding: 6px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  cursor: default;
+  transition: transform 0.1s;
+}
+.table-card.occupied { background: #e8d4a0; border-color: #c8a060; }
+.table-card.deliver-ready {
+  cursor: pointer;
+  border-color: #2ecc71;
+  background: #d5f5e3;
+  animation: tableGlow 0.75s infinite;
+}
+.table-card.deliver-ready:active { transform: scale(0.95); }
+.table-label { font-size: 11px; color: #6b3a0f; font-family: 'Nunito', sans-serif; }
+.table-patron-emoji { font-size: 22px; line-height: 1.2; }
+.table-patron-name { font-size: 10px; color: #5a3008; font-family: 'Nunito', sans-serif; font-weight: 800; white-space: nowrap; overflow: hidden; max-width: 90%; text-overflow: ellipsis; }
+.table-order-emoji { font-size: 18px; }
+.table-empty-txt { font-size: 11px; color: #a07840; font-family: 'Nunito', sans-serif; }
+
+/* ── CHAOS MESSAGE ── */
+#chaos-msg {
+  position: fixed;
+  top: 48%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(180, 30, 30, 0.92);
+  color: white;
+  font-size: 20px;
+  padding: 12px 22px;
+  border-radius: 14px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.3s;
+  z-index: 50;
+  text-align: center;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+  max-width: 80%;
+}
+
+/* ── SCORE POPUP ── */
+.score-popup {
+  position: fixed;
+  font-size: 26px;
+  font-family: 'Fredoka One', cursive;
+  pointer-events: none;
+  z-index: 60;
+  animation: scoreFloat 1.1s ease-out forwards;
+}
+@keyframes scoreFloat {
+  0%   { opacity: 1; transform: translateY(0); }
+  100% { opacity: 0; transform: translateY(-55px); }
+}
+
+/* ── OVERLAY ── */
+#overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 5, 0, 0.9);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  padding: 20px;
+}
+#overlay h1 { font-size: 36px; color: #ffd700; margin-bottom: 6px; text-align: center; }
+#overlay .subtitle { color: #ffeaa7; font-size: 14px; margin-bottom: 16px; text-align: center; font-family: 'Nunito', sans-serif; line-height: 1.5; max-width: 340px; }
+.howto {
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.18);
+  border-radius: 14px;
+  padding: 12px 18px;
+  color: #fff;
+  font-family: 'Nunito', sans-serif;
+  font-size: 14px;
+  line-height: 2;
+  margin-bottom: 18px;
+  max-width: 340px;
+  width: 100%;
+}
+.howto b { color: #ffd700; }
+#final-score { font-size: 26px; color: #ffd700; margin-bottom: 6px; display: none; }
+#final-msg { font-size: 15px; color: #ccc; margin-bottom: 18px; display: none; font-family: 'Nunito', sans-serif; text-align: center; }
+#start-btn {
+  font-family: 'Fredoka One', cursive;
+  font-size: 22px;
+  background: linear-gradient(135deg, #e74c3c, #c0392b);
+  color: white;
+  border: none;
+  border-radius: 50px;
+  padding: 13px 42px;
+  cursor: pointer;
+  box-shadow: 0 4px 20px rgba(231,76,60,0.5);
+  -webkit-tap-highlight-color: transparent;
+}
+#start-btn:active { transform: scale(0.97); }
+
+/* ── KEYFRAMES ── */
+@keyframes readyPulse {
+  0%,100% { border-color: #2ecc71; box-shadow: 0 0 0 0 rgba(46,204,113,0.5); }
+  50%      { border-color: #27ae60; box-shadow: 0 0 0 6px rgba(46,204,113,0); }
+}
+@keyframes tableGlow {
+  0%,100% { border-color: #2ecc71; box-shadow: 0 0 0 0 rgba(46,204,113,0.6); }
+  50%      { border-color: #27ae60; box-shadow: 0 0 0 8px rgba(46,204,113,0); }
+}
+@keyframes stationGlow {
+  0%,100% { box-shadow: 0 0 0 0 rgba(255,255,255,0.7); }
+  50%      { box-shadow: 0 0 0 7px rgba(255,255,255,0); }
+}
+@keyframes firePulse {
+  0%,100% { box-shadow: 0 0 0 0 rgba(255,80,0,0.85); }
+  50%      { box-shadow: 0 0 0 10px rgba(255,80,0,0); }
+}
+@keyframes fireWiggle {
+  0%   { transform: rotate(-12deg); }
+  50%  { transform: rotate(12deg); }
+  100% { transform: rotate(-12deg); }
+}
+
+/* ── RESPONSIVE ── */
+@media (max-width: 420px) {
+  #header { padding: 6px 10px; }
+  .stat { font-size: 15px; }
+  .stat span { font-size: 20px; }
+  #timer { font-size: 16px; }
+  #orders-panel { min-height: 120px; }
+  .order-card { min-width: 108px; max-width: 118px; }
+  .station-name, .table-label { font-size: 12px; }
+}
+</style>
+</head>
+<body>
+
+<div id="header">
+  <div class="stat">⭐ <span id="score-val">0</span></div>
+  <div style="font-size:16px">Hadley's Kitchen Rush!</div>
+  <div id="timer">⏱ <span id="timer-val">90</span>s</div>
+</div>
+
+<div id="orders-panel">
+  <div id="orders-empty">Your orders will appear here!</div>
+</div>
+
+<div id="main-area">
+  <div id="kitchen">
+    <div id="kitchen-title">🍳 Kitchen Stations</div>
+    <div id="stations-grid"></div>
+  </div>
+  <div id="dining-room">
+    <div id="dining-title">🍽️ Dining Room</div>
+    <div id="tables-grid"></div>
+  </div>
+</div>
+
+<div id="chaos-msg"></div>
+
+<div id="overlay">
+  <h1>👩‍🍳 Hadley's Kitchen Rush!</h1>
+  <div class="subtitle">Cook the orders and deliver them before your patrons run out of patience!</div>
+  <div class="howto" id="howto-box">
+    <b>1.</b> Tap an <b>order card</b> to select it<br>
+    <b>2.</b> Tap the glowing <b>kitchen station</b> to start cooking<br>
+    <b>3.</b> When done, tap the right <b>table</b> to deliver<br>
+    <b>⚠️ Watch out</b> for fires, spills &amp; grumpy patrons!
+  </div>
+  <div id="final-score"></div>
+  <div id="final-msg"></div>
+  <button id="start-btn">🍳 Start Cooking!</button>
+</div>
+
+<script>
+// ── DATA ──────────────────────────────────────────────
+const PATRONS = [
+  { name: 'Mr. Grumpy',    emoji: '😤' },
+  { name: 'Mrs. Fancy',    emoji: '👑' },
+  { name: 'Little Timmy',  emoji: '👦' },
+  { name: 'Chef Bob',      emoji: '👨‍🍳' },
+  { name: 'The Mayor',     emoji: '🎩' },
+  { name: 'Grandma Rose',  emoji: '👵' },
+  { name: 'Skater Kid',    emoji: '🛹' },
+  { name: 'Dr. Daniels',   emoji: '👩‍⚕️' },
+  { name: 'Captain Lee',   emoji: '⚓' },
+  { name: 'Princess Mia',  emoji: '🌸' },
+];
+
+const MENU = [
+  { name: 'Burger',        emoji: '🍔', station: 'grill',   cookTime: 4500, patience: 24000 },
+  { name: 'Steak',         emoji: '🥩', station: 'grill',   cookTime: 6000, patience: 28000 },
+  { name: 'Fries',         emoji: '🍟', station: 'fryer',   cookTime: 3000, patience: 20000 },
+  { name: 'Fried Chicken', emoji: '🍗', station: 'fryer',   cookTime: 5000, patience: 25000 },
+  { name: 'Salad',         emoji: '🥗', station: 'prep',    cookTime: 2500, patience: 22000 },
+  { name: 'Sandwich',      emoji: '🥪', station: 'prep',    cookTime: 3500, patience: 23000 },
+  { name: 'Ice Cream',     emoji: '🍦', station: 'dessert', cookTime: 2000, patience: 18000 },
+  { name: 'Cake Slice',    emoji: '🎂', station: 'dessert', cookTime: 3000, patience: 21000 },
+];
+
+const STATION_DEFS = [
+  { id: 'grill',   name: 'Grill',   emoji: '🔥', foods: '🍔 🥩', bg: 'linear-gradient(135deg,#ff6b35,#e85d04)' },
+  { id: 'fryer',   name: 'Fryer',   emoji: '🍳', foods: '🍟 🍗', bg: 'linear-gradient(135deg,#f4a261,#e76f51)' },
+  { id: 'prep',    name: 'Prep',    emoji: '🥄', foods: '🥗 🥪', bg: 'linear-gradient(135deg,#2a9d8f,#1a7a6e)' },
+  { id: 'dessert', name: 'Dessert', emoji: '🍰', foods: '🍦 🎂', bg: 'linear-gradient(135deg,#e76f97,#c9184a)' },
+];
+
+const NUM_TABLES = 6;
+
+// ── STATE ─────────────────────────────────────────────
+let state, gameRunning, lastTime, gameTimer;
+let orderIdCounter, orderSpawnTimer, orderSpawnInterval;
+let chaosTimer, chaosInterval;
+
+function rand(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
+function pick(arr)       { return arr[rand(0, arr.length - 1)]; }
+
+function freshState() {
+  const tables = {};
+  for (let i = 1; i <= NUM_TABLES; i++) tables[i] = { id: i, orderId: null };
+
+  const stations = {};
+  STATION_DEFS.forEach(d => {
+    stations[d.id] = { ...d, state: 'idle', cookingOrderId: null, progress: 0, fireTimer: 0 };
+  });
+
+  return { orders: {}, stations, tables, selectedOrderId: null, score: 0, timeLeft: 90 };
+}
+
+// ── GAME LOGIC ────────────────────────────────────────
+function freeTables(st) {
+  return Object.values(st.tables).filter(t => t.orderId === null);
+}
+
+function activeOrders(st) {
+  return Object.values(st.orders).filter(o => o.state !== 'delivered' && o.state !== 'failed');
+}
+
+function spawnOrder(st) {
+  const avail = freeTables(st);
+  if (avail.length === 0 || activeOrders(st).length >= 4) return;
+  const table  = pick(avail);
+  const food   = pick(MENU);
+  const patron = pick(PATRONS);
+  const id     = 'o' + (++orderIdCounter);
+  st.orders[id] = {
+    id, patron, food, tableId: table.id,
+    state: 'pending',
+    patience: food.patience, maxPatience: food.patience,
+    cookProgress: 0, stationId: null, cleanupAt: null,
+  };
+  table.orderId = id;
+}
+
+function triggerChaos(st) {
+  const type = pick(['fire', 'spill', 'rush']);
+
+  if (type === 'fire') {
+    const idle = Object.values(st.stations).filter(s => s.state === 'idle');
+    if (!idle.length) return null;
+    const s = pick(idle);
+    s.state = 'fire';
+    s.fireTimer = 7500;
+    return { type: 'fire', name: s.name };
+  }
+
+  if (type === 'spill') {
+    const cooking = Object.values(st.stations).filter(s => s.state === 'cooking');
+    if (!cooking.length) return null;
+    const s = pick(cooking);
+    s.progress = 0;
+    const order = st.orders[s.cookingOrderId];
+    if (order) order.cookProgress = 0;
+    return { type: 'spill', name: s.name };
+  }
+
+  // rush
+  spawnOrder(st);
+  return { type: 'rush' };
+}
+
+function doDeliver(st, orderId, tableId) {
+  const order = st.orders[orderId];
+  if (!order || order.state !== 'ready' || order.tableId !== tableId) return null;
+
+  const ratio = order.patience / order.maxPatience;
+  const pts   = ratio > 0.66 ? 75 : ratio > 0.33 ? 50 : 30;
+  st.score += pts;
+  order.state = 'delivered';
+  order.cleanupAt = performance.now() + 800;
+  st.tables[tableId].orderId = null;
+  st.selectedOrderId = null;
+  return pts;
+}
+
+// ── UPDATE ────────────────────────────────────────────
+function update(timestamp) {
+  const dt = lastTime ? Math.min(timestamp - lastTime, 100) : 16;
+  lastTime = timestamp;
+
+  // Game clock
+  gameTimer += dt;
+  if (gameTimer >= 1000) {
+    gameTimer -= 1000;
+    state.timeLeft--;
+    if (state.timeLeft <= 0) { endGame(); return false; }
+  }
+
+  // Order spawn
+  orderSpawnTimer += dt;
+  if (orderSpawnTimer >= orderSpawnInterval) {
+    orderSpawnTimer = 0;
+    orderSpawnInterval = rand(8000, 13000);
+    spawnOrder(state);
+  }
+
+  // Chaos
+  chaosTimer += dt;
+  if (chaosTimer >= chaosInterval) {
+    chaosTimer = 0;
+    chaosInterval = rand(16000, 24000);
+    const ev = triggerChaos(state);
+    if (ev) {
+      if (ev.type === 'fire')  showMsg('🔥 ' + ev.name + ' is on fire! Tap it!', '#c0392b');
+      if (ev.type === 'spill') showMsg('💦 Spill at ' + ev.name + '! Reset!', '#2980b9');
+      if (ev.type === 'rush')  showMsg('🏃 A new party just walked in!', '#8e44ad');
+    }
+  }
+
+  // Patience drain (rate depends on state)
+  Object.values(state.orders).forEach(order => {
+    if (order.state === 'pending' || order.state === 'cooking' || order.state === 'ready') {
+      const rate = order.state === 'cooking' ? 0.5 : order.state === 'ready' ? 1.4 : 1.0;
+      order.patience -= dt * rate;
+
+      if (order.patience <= 0) {
+        order.patience = 0;
+        order.state = 'failed';
+        order.cleanupAt = timestamp + 1800;
+        state.score = Math.max(0, state.score - 10);
+        if (state.selectedOrderId === order.id) state.selectedOrderId = null;
+        state.tables[order.tableId].orderId = null;
+        if (order.stationId) {
+          const st = state.stations[order.stationId];
+          if (st && st.cookingOrderId === order.id) {
+            st.state = 'idle'; st.cookingOrderId = null; st.progress = 0;
+          }
+        }
+        showMsg('😡 ' + order.patron.name + ' left! −10 pts', '#c0392b');
+      }
+    }
+
+    // Cleanup delivered/failed after delay
+    if (order.cleanupAt && timestamp >= order.cleanupAt) {
+      delete state.orders[order.id];
+    }
+  });
+
+  // Cooking progress
+  Object.values(state.stations).forEach(station => {
+    if (station.state === 'cooking') {
+      const order = state.orders[station.cookingOrderId];
+      if (!order) { station.state = 'idle'; station.cookingOrderId = null; station.progress = 0; return; }
+      station.progress = Math.min(100, station.progress + (dt / order.food.cookTime) * 100);
+      order.cookProgress = station.progress;
+      if (station.progress >= 100) {
+        order.state = 'ready';
+        station.state = 'idle'; station.cookingOrderId = null; station.progress = 0;
+      }
+    }
+
+    if (station.state === 'fire') {
+      station.fireTimer -= dt;
+      if (station.fireTimer <= 0) {
+        station.state = 'disabled';
+        setTimeout(() => { if (station.state === 'disabled') { station.state = 'idle'; render(state); } }, 3000);
+      }
+    }
+  });
+
+  return true;
+}
+
+// ── RENDER ────────────────────────────────────────────
+function render(st) {
+  // Header
+  document.getElementById('score-val').textContent = st.score;
+  document.getElementById('timer-val').textContent = st.timeLeft;
+  document.getElementById('timer').classList.toggle('urgent', st.timeLeft <= 15);
+
+  renderOrders(st);
+  renderStations(st);
+  renderTables(st);
+}
+
+function renderOrders(st) {
+  const panel = document.getElementById('orders-panel');
+  const empty = document.getElementById('orders-empty');
+  const live  = Object.values(st.orders).filter(o => o.state !== 'delivered');
+
+  empty.style.display = live.length ? 'none' : 'block';
+
+  // Remove stale DOM cards
+  panel.querySelectorAll('.order-card').forEach(card => {
+    if (!st.orders[card.dataset.id]) card.remove();
+  });
+
+  live.forEach(order => {
+    let card = panel.querySelector(`[data-id="${order.id}"]`);
+    if (!card) {
+      card = document.createElement('div');
+      card.className = 'order-card';
+      card.dataset.id = order.id;
+      card.innerHTML = `
+        <div class="order-patron"></div>
+        <div class="order-food"></div>
+        <div class="order-food-name"></div>
+        <div class="order-hint"></div>
+        <div class="order-table-lbl"></div>
+        <div class="patience-bar-bg"><div class="patience-bar" style="width:100%"></div></div>
+        <div class="cook-bg"><div class="cook-bar" style="width:0%"></div></div>
+        <div class="order-status"></div>`;
+      card.addEventListener('click', () => onOrderClick(order.id));
+      panel.appendChild(card);
+    }
+
+    // Static content (set once)
+    if (!card.dataset.init) {
+      card.dataset.init = '1';
+      card.querySelector('.order-patron').textContent    = order.patron.emoji + ' ' + order.patron.name;
+      card.querySelector('.order-food').textContent      = order.food.emoji;
+      card.querySelector('.order-food-name').textContent = order.food.name;
+      const sdef = STATION_DEFS.find(s => s.id === order.food.station);
+      card.querySelector('.order-hint').textContent      = 'Use: ' + (sdef ? sdef.name : '');
+      card.querySelector('.order-table-lbl').textContent = '📍 Table ' + order.tableId;
+    }
+
+    // Patience bar
+    const pct = (order.patience / order.maxPatience) * 100;
+    const bar = card.querySelector('.patience-bar');
+    bar.style.width = Math.max(0, pct) + '%';
+    bar.style.background = pct > 55 ? '#2ecc71' : pct > 25 ? '#f39c12' : '#e74c3c';
+
+    // Cook progress
+    const cookBg  = card.querySelector('.cook-bg');
+    const cookBar = card.querySelector('.cook-bar');
+    cookBg.style.display  = order.state === 'cooking' ? 'block' : 'none';
+    cookBar.style.width   = order.cookProgress + '%';
+
+    // Status text
+    const status = card.querySelector('.order-status');
+    const msgs = { pending: ['Tap to cook!', '#999'], cooking: ['Cooking... 🍳', '#3498db'], ready: ['✓ Deliver now!', '#2ecc71'], failed: ['😡 Left! −10', '#e74c3c'] };
+    const [txt, col] = msgs[order.state] || ['', '#999'];
+    status.textContent  = txt;
+    status.style.color  = col;
+
+    // Classes
+    card.classList.toggle('selected', st.selectedOrderId === order.id);
+    card.classList.toggle('ready',    order.state === 'ready');
+    card.classList.toggle('failed',   order.state === 'failed');
+  });
+}
+
+function renderStations(st) {
+  const grid = document.getElementById('stations-grid');
+  const sel  = st.selectedOrderId ? st.orders[st.selectedOrderId] : null;
+
+  STATION_DEFS.forEach(def => {
+    const station = st.stations[def.id];
+    let card = grid.querySelector(`[data-sid="${def.id}"]`);
+    if (!card) {
+      card = document.createElement('div');
+      card.className = 'station-card';
+      card.dataset.sid = def.id;
+      card.style.background = def.bg;
+      card.innerHTML = `
+        <div class="station-emoji">${def.emoji}</div>
+        <div class="station-name">${def.name}</div>
+        <div class="station-foods">${def.foods}</div>
+        <div class="station-cooking-food"></div>
+        <div class="station-prog-bg"><div class="station-prog" style="width:0%"></div></div>
+        <div class="station-status"></div>
+        <div class="fire-badge">🔥</div>`;
+      card.addEventListener('click', () => onStationClick(def.id));
+      grid.appendChild(card);
+    }
+
+    const foodsEl   = card.querySelector('.station-foods');
+    const cookFood  = card.querySelector('.station-cooking-food');
+    const progBg    = card.querySelector('.station-prog-bg');
+    const progBar   = card.querySelector('.station-prog');
+    const statusEl  = card.querySelector('.station-status');
+    const fireBadge = card.querySelector('.fire-badge');
+
+    card.classList.remove('pulsing', 'fire', 'disabled');
+
+    if (station.state === 'fire') {
+      card.classList.add('fire');
+      foodsEl.style.display   = 'none';
+      cookFood.style.display  = 'none';
+      progBg.style.display    = 'none';
+      fireBadge.style.display = 'block';
+      statusEl.textContent    = 'TAP TO PUT OUT!';
+
+    } else if (station.state === 'cooking') {
+      const order = st.orders[station.cookingOrderId];
+      foodsEl.style.display      = 'none';
+      cookFood.style.display     = 'block';
+      cookFood.textContent       = order ? order.food.emoji : '';
+      progBg.style.display       = 'block';
+      progBar.style.width        = station.progress + '%';
+      fireBadge.style.display    = 'none';
+      statusEl.textContent       = 'Cooking...';
+
+    } else if (station.state === 'disabled') {
+      card.classList.add('disabled');
+      foodsEl.style.display   = 'block';
+      cookFood.style.display  = 'none';
+      progBg.style.display    = 'none';
+      fireBadge.style.display = 'none';
+      statusEl.textContent    = 'Cleaning... 🧹';
+
+    } else {
+      // idle
+      const shouldPulse = sel && sel.state === 'pending' && sel.food.station === def.id;
+      if (shouldPulse) card.classList.add('pulsing');
+      foodsEl.style.display   = 'block';
+      cookFood.style.display  = 'none';
+      progBg.style.display    = 'none';
+      fireBadge.style.display = 'none';
+      statusEl.textContent    = shouldPulse ? '← Cook here!' : 'Ready';
+    }
+  });
+}
+
+function renderTables(st) {
+  const grid = document.getElementById('tables-grid');
+  const sel  = st.selectedOrderId ? st.orders[st.selectedOrderId] : null;
+
+  for (let i = 1; i <= NUM_TABLES; i++) {
+    const table = st.tables[i];
+    let card = grid.querySelector(`[data-tid="${i}"]`);
+    if (!card) {
+      card = document.createElement('div');
+      card.className = 'table-card';
+      card.dataset.tid = i;
+      card.innerHTML = `
+        <div class="table-label">Table ${i}</div>
+        <div class="table-patron-emoji"></div>
+        <div class="table-patron-name"></div>
+        <div class="table-order-emoji"></div>
+        <div class="table-empty-txt">Empty</div>`;
+      card.addEventListener('click', () => onTableClick(i));
+      grid.appendChild(card);
+    }
+
+    const pEmo    = card.querySelector('.table-patron-emoji');
+    const pName   = card.querySelector('.table-patron-name');
+    const oEmo    = card.querySelector('.table-order-emoji');
+    const emptyEl = card.querySelector('.table-empty-txt');
+
+    const orderId = table.orderId;
+    const order   = orderId ? st.orders[orderId] : null;
+    const isTarget = sel && sel.state === 'ready' && sel.tableId === i;
+
+    card.classList.remove('occupied', 'deliver-ready');
+
+    if (order && order.state !== 'failed' && order.state !== 'delivered') {
+      pEmo.textContent    = order.patron.emoji;
+      pName.textContent   = order.patron.name;
+      oEmo.textContent    = order.state === 'ready' ? order.food.emoji : '';
+      emptyEl.style.display = 'none';
+      card.classList.add('occupied');
+      if (isTarget) card.classList.add('deliver-ready');
+    } else {
+      pEmo.textContent  = '';
+      pName.textContent = '';
+      oEmo.textContent  = '';
+      emptyEl.style.display = 'block';
+    }
+  }
+}
+
+// ── INTERACTIONS ──────────────────────────────────────
+function onOrderClick(orderId) {
+  if (!gameRunning) return;
+  const order = state.orders[orderId];
+  if (!order || (order.state !== 'pending' && order.state !== 'ready')) return;
+  state.selectedOrderId = state.selectedOrderId === orderId ? null : orderId;
+  render(state);
+}
+
+function onStationClick(stationId) {
+  if (!gameRunning) return;
+  const station = state.stations[stationId];
+
+  if (station.state === 'fire') {
+    station.state = 'idle';
+    station.fireTimer = 0;
+    showMsg('🚒 Fire out! Good job!', '#27ae60');
+    render(state);
+    return;
+  }
+
+  const sel = state.selectedOrderId ? state.orders[state.selectedOrderId] : null;
+  if (!sel || sel.state !== 'pending') return;
+
+  if (sel.food.station !== stationId) { showMsg('Wrong station! Try another 😅', '#e67e22'); return; }
+  if (station.state === 'cooking')    { showMsg('That station is busy! ⏳', '#e67e22'); return; }
+  if (station.state === 'disabled')   { showMsg('Station not ready yet! 🧹', '#7f8c8d'); return; }
+
+  station.state = 'cooking';
+  station.cookingOrderId = sel.id;
+  station.progress = 0;
+  sel.state = 'cooking';
+  sel.stationId = stationId;
+  sel.cookProgress = 0;
+  state.selectedOrderId = null;
+  render(state);
+}
+
+function onTableClick(tableId) {
+  if (!gameRunning) return;
+  const sel = state.selectedOrderId ? state.orders[state.selectedOrderId] : null;
+  if (!sel || sel.state !== 'ready') return;
+  if (sel.tableId !== tableId) { showMsg('Wrong table! Check the order 📍', '#e67e22'); return; }
+
+  const pts = doDeliver(state, sel.id, tableId);
+  if (pts !== null) {
+    spawnScorePopup(pts);
+    render(state);
+  }
+}
+
+// ── GAME LOOP ─────────────────────────────────────────
+function loop(timestamp) {
+  if (!gameRunning) return;
+  const ok = update(timestamp);
+  if (ok) {
+    render(state);
+    requestAnimationFrame(loop);
+  }
+}
+
+function startGame() {
+  state         = freshState();
+  orderIdCounter = 0;
+  gameRunning   = true;
+  lastTime      = 0;
+  gameTimer     = 0;
+  orderSpawnTimer    = 3500;
+  orderSpawnInterval = rand(8000, 12000);
+  chaosTimer    = 0;
+  chaosInterval = rand(18000, 26000);
+
+  // Clear DOM
+  document.querySelectorAll('.order-card, .station-card, .table-card').forEach(el => el.remove());
+  document.getElementById('orders-empty').style.display = 'block';
+  document.getElementById('overlay').style.display = 'none';
+
+  render(state);
+  requestAnimationFrame(loop);
+}
+
+function endGame() {
+  gameRunning = false;
+  render(state);
+
+  const ov = document.getElementById('overlay');
+  ov.style.display = 'flex';
+  document.getElementById('howto-box').style.display = 'none';
+
+  const scoreEl = document.getElementById('final-score');
+  const msgEl   = document.getElementById('final-msg');
+  scoreEl.style.display = 'block';
+  msgEl.style.display   = 'block';
+  scoreEl.textContent   = 'Final Score: ' + state.score + ' pts';
+
+  const s = state.score;
+  msgEl.textContent =
+    s >= 600 ? '🌟 WOW! You\'re a master chef, Hadley!' :
+    s >= 400 ? '🏆 Amazing work! Top of the class!' :
+    s >= 250 ? '👏 Great job, Chef Hadley! Keep it up!' :
+    s >= 100 ? '🍳 Nice try! You\'ll do even better next time!' :
+               '😅 The kitchen was tough today — try again!';
+
+  document.querySelector('.subtitle').textContent = 'Think you can beat ' + state.score + ' points?';
+  document.getElementById('start-btn').textContent = '🔄 Play Again!';
+}
+
+// ── HELPERS ───────────────────────────────────────────
+function showMsg(text, color) {
+  const el = document.getElementById('chaos-msg');
+  el.textContent = text;
+  el.style.background = (color || '#8b2635') + 'ee';
+  el.style.opacity = '1';
+  clearTimeout(el._t);
+  el._t = setTimeout(() => el.style.opacity = '0', 2200);
+}
+
+function spawnScorePopup(pts) {
+  const el = document.createElement('div');
+  el.className = 'score-popup';
+  el.textContent = '+' + pts + (pts >= 70 ? ' ⭐' : '');
+  el.style.color  = pts >= 70 ? '#f1c40f' : pts >= 50 ? '#2ecc71' : '#aaa';
+  el.style.left   = rand(25, 65) + '%';
+  el.style.top    = rand(25, 55) + '%';
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 1200);
+}
+
+// ── BOOT ──────────────────────────────────────────────
+document.getElementById('start-btn').addEventListener('click', startGame);
+</script>
+</body>
+</html>
