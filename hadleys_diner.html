@@ -80,6 +80,12 @@ function makeCharCanvas(opts) {
   px(0, bY + 6,  3, 2, skin);                   // left hand
   px(13, bY + 6, 3, 2, skin);                   // right hand
 
+  // Long hair flowing over shoulders/body
+  if (opts.longHair) {
+    px(2, bY, 2, 7, hair);   // left hair over body
+    px(12, bY, 2, 7, hair);  // right hair over body
+  }
+
   // Pants
   const pY = bY + 9;
   px(2, pY, 12, 7, pants);
@@ -162,7 +168,7 @@ class GameScene extends Phaser.Scene {
   preload() {
     // Characters
     const chars = [
-      ['hadley',  { hair:'#6B3A2A', skin:'#FFCBA4', shirt:'#F0F0EE', pants:'#1a2a6c', hat:'#FFFFFF' }],
+      ['hadley',  { hair:'#7B4A2A', skin:'#FFE4C4', shirt:'#F0F0EE', pants:'#1a2a6c', hat:'#FFFFFF', longHair: true }],
       ['server',  { hair:'#D4AA44', skin:'#FFE4B5', shirt:'#CC3333', pants:'#222222', hat: null }],
       ['cust_a',  { hair:'#222222', skin:'#FFCBA4', shirt:'#4A90D9', pants:'#5C4033', hat: null }],
       ['cust_b',  { hair:'#AA7744', skin:'#D4956A', shirt:'#2E8B57', pants:'#222233', hat: null }],
@@ -257,7 +263,7 @@ class GameScene extends Phaser.Scene {
         ...d,
         graphics: sg, barFill,
         cooking: false, progress: 0,
-        readyOrder: null, foodSprite: null
+        readyOrder: null, foodSprite: null, cookingSprite: null
       });
     });
 
@@ -479,6 +485,11 @@ class GameScene extends Phaser.Scene {
     station.activeOrder = order;
     this._refreshOrders();
 
+    // Show food being prepped (dim placeholder)
+    if (station.cookingSprite) station.cookingSprite.destroy();
+    station.cookingSprite = this.add.image(station.x, station.y - 42, order.item)
+      .setDepth(8).setScale(0.6).setAlpha(0.4);
+
     this.tweens.add({
       targets: station, progress: 1, duration: 4000, ease: 'Linear',
       onUpdate: () => {
@@ -493,7 +504,8 @@ class GameScene extends Phaser.Scene {
         station.barFill.clear();
         order.status = 'ready';
 
-        // Food sprite on counter
+        // Replace dim cooking sprite with full food sprite
+        if (station.cookingSprite) { station.cookingSprite.destroy(); station.cookingSprite = null; }
         if (station.foodSprite) station.foodSprite.destroy();
         station.foodSprite  = this.add.image(station.x, station.y - 42, order.item)
           .setDepth(8).setScale(0.9);
@@ -576,13 +588,16 @@ class GameScene extends Phaser.Scene {
 
     const bg = this.add.graphics().setDepth(20);
     bg.fillStyle(0xFFFFFF, 0.97);
-    bg.fillRoundedRect(bx, by, 80, 32, 7);
+    bg.fillRoundedRect(bx, by, 80, 50, 7);
     // Tail pointing down
-    bg.fillTriangle(cust.x - 7, by + 32, cust.x + 7, by + 32, cust.x, by + 44);
+    bg.fillTriangle(cust.x - 7, by + 50, cust.x + 7, by + 50, cust.x, by + 62);
     cust.bubble = bg;
 
-    cust.bubbleTxt = this.add.text(cust.x, by + 16, text, {
-      fontSize: '11px', fontFamily: 'monospace', fontStyle: 'bold', color: '#222222'
+    if (cust.foodImg) { cust.foodImg.destroy(); cust.foodImg = null; }
+    cust.foodImg = this.add.image(cust.x - 14, by + 22, text).setScale(0.48).setDepth(21);
+
+    cust.bubbleTxt = this.add.text(cust.x + 16, by + 22, text, {
+      fontSize: '9px', fontFamily: 'monospace', fontStyle: 'bold', color: '#222222'
     }).setOrigin(0.5).setDepth(21);
 
     cust.pBar = this.add.graphics().setDepth(20);
@@ -607,6 +622,7 @@ class GameScene extends Phaser.Scene {
     if (cust.tableRef) { cust.tableRef.occupied = false; cust.tableRef.customer = null; }
     if (cust.bubble)    { cust.bubble.destroy();    cust.bubble    = null; }
     if (cust.bubbleTxt) { cust.bubbleTxt.destroy(); cust.bubbleTxt = null; }
+    if (cust.foodImg)   { cust.foodImg.destroy();   cust.foodImg   = null; }
     if (cust.pBar)      { cust.pBar.destroy();      cust.pBar      = null; }
 
     if (!happy) {
